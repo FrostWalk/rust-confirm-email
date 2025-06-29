@@ -70,9 +70,10 @@
 //! MIT
 use crate::crypto::{decrypt, encrypt};
 use crate::error::Error;
-use crate::error::Error::{Expired, Other};
+use crate::error::Error::{Expired, InvalidEmail, InvalidExpiration, JsonError, Other};
 use crate::payload::Payload;
 use chrono::{Duration, TimeZone, Utc};
+use regex;
 
 /// Contains helper functions for encryption and decryption
 mod crypto;
@@ -83,15 +84,46 @@ mod payload;
 /// Contains tests
 #[cfg(test)]
 mod tests;
+/// Contains benchmarks
+#[cfg(test)]
+mod benchmarks;
+/// Contains utility functions
+pub mod utils;
 
 const DEFAULT_VALIDITY_DAYS: i64 = 1;
 
+/// Validates email format using a simple regex pattern
+fn validate_email_format(email: &str) -> bool {
+    // More strict email validation - rejects consecutive dots and other invalid patterns
+    let email_regex = regex::Regex::new(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$").unwrap();
+    
+    // Additional checks for edge cases
+    if email.contains("..") || // No consecutive dots
+       email.starts_with('.') || email.ends_with('.') || // No leading/trailing dots
+       email.contains("@.") || email.contains(".@") || // No dots adjacent to @
+       email.chars().filter(|&c| c == '@').count() != 1 { // Exactly one @
+        return false;
+    }
+    
+    email_regex.is_match(email)
+}
+
 fn generate(email: String, key: String, exp: Duration) -> Result<String, Error> {
+    // Validate email format
+    if !validate_email_format(&email) {
+        return Err(InvalidEmail(email));
+    }
+
+    // Validate key length
+    if key.len() < 8 {
+        return Err(Other("encryption key must be at least 8 characters".to_string()));
+    }
+
     let expiration = (Utc::now() + exp).timestamp();
 
     let payload = Payload { email, expiration };
 
-    let json = serde_json::to_string(&payload).map_err(|e| Other(format!("{e:#?}")))?;
+    let json = serde_json::to_string(&payload).map_err(|_| JsonError)?;
     let data = encrypt(key.as_str(), json.as_str())?;
 
     Ok(data)
@@ -128,8 +160,13 @@ pub fn generate_token_with_expiration(
     exp_seconds: i64,
 ) -> Result<String, Error> {
     if exp_seconds <= 1 {
-        return Err(Other(
-            "invalid expiration, must be greater than 1 second".to_string(),
+        return Err(InvalidExpiration(
+            "expiration must be greater than 1 second".to_string(),
+        ));
+    }
+    if exp_seconds > 365 * 24 * 3600 {
+        return Err(InvalidExpiration(
+            "expiration cannot be more than 1 year".to_string(),
         ));
     }
     generate(email, key, Duration::seconds(exp_seconds))
@@ -188,14 +225,19 @@ pub fn generate_token(email: String, key: String) -> Result<String, Error> {
 /// assert_eq!(validate_token(token, "secret_key".to_string()).unwrap(), "user@example.com");
 /// ```
 pub fn validate_token(token: String, key: String) -> Result<String, Error> {
+    // Validate key length
+    if key.len() < 8 {
+        return Err(Other("encryption key must be at least 8 characters".to_string()));
+    }
+
     let decrypted = decrypt(key.as_str(), token.as_str())?;
 
     let payload: Payload =
-        serde_json::from_str(decrypted.as_str()).map_err(|e| Other(format!("{e:#?}")))?;
+        serde_json::from_str(decrypted.as_str()).map_err(|_| JsonError)?;
 
     let exp = match Utc.timestamp_opt(payload.expiration, 0).single() {
         None => {
-            return Err(Other(
+            return Err(InvalidExpiration(
                 "out-of-range number of seconds in expiration".to_string(),
             ));
         }

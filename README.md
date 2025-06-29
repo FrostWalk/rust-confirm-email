@@ -40,7 +40,7 @@ let confirmation_token = generate_token(
 // https://yourapp.com/confirm?token={confirmation_token}
 
 // Later, when the user clicks the confirmation link, validate the token
-match validate(confirmation_token, "your_secret_key".to_string()) {
+match validate_token(confirmation_token, "your_secret_key".to_string()) {
     Ok(email) => {
         // Email confirmed successfully - activate the user account
         println!("Confirmed email address: {}", email);
@@ -83,7 +83,7 @@ fn send_confirmation_email(user_email: &str, secret_key: &str) -> Result<(), Str
 }
 
 fn handle_confirmation(token: &str, secret_key: &str) -> Result<String, String> {
-    match validate(token.to_string(), secret_key.to_string()) {
+    match validate_token(token.to_string(), secret_key.to_string()) {
         Ok(email) => {
             // Update user status in database
             // Mark email as confirmed
