@@ -91,10 +91,10 @@ fn generate(email: String, key: String, exp: Duration) -> Result<String, Error> 
 
     let payload = Payload { email, expiration };
 
-    let json = serde_json::to_string(&payload).map_err(|e| Other(format!("{:}", e)))?;
+    let json = serde_json::to_string(&payload).map_err(|e| Other(format!("{e:#?}")))?;
     let data = encrypt(key.as_str(), json.as_str())?;
 
-    Ok(urlencoding::encode(data.as_str()).to_string())
+    Ok(data)
 }
 
 #[inline]
@@ -188,12 +188,10 @@ pub fn generate_token(email: String, key: String) -> Result<String, Error> {
 /// assert_eq!(validate_token(token, "secret_key".to_string()).unwrap(), "user@example.com");
 /// ```
 pub fn validate_token(token: String, key: String) -> Result<String, Error> {
-    let decoded = urlencoding::decode(token.as_str()).map_err(|e| Other(format!("{:}", e)))?;
-
-    let decrypted = decrypt(key.as_str(), decoded.as_ref())?;
+    let decrypted = decrypt(key.as_str(), token.as_str())?;
 
     let payload: Payload =
-        serde_json::from_str(decrypted.as_str()).map_err(|e| Other(format!("{:}", e)))?;
+        serde_json::from_str(decrypted.as_str()).map_err(|e| Other(format!("{e:#?}")))?;
 
     let exp = match Utc.timestamp_opt(payload.expiration, 0).single() {
         None => {
