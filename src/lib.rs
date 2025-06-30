@@ -70,7 +70,7 @@
 //! MIT
 use crate::crypto::{decrypt, encrypt};
 use crate::error::Error;
-use crate::error::Error::{Expired, Other};
+use crate::error::Error::Expired;
 use crate::payload::Payload;
 use chrono::{Duration, TimeZone, Utc};
 
@@ -91,7 +91,7 @@ fn generate(email: String, key: String, exp: Duration) -> Result<String, Error> 
 
     let payload = Payload { email, expiration };
 
-    let json = serde_json::to_string(&payload).map_err(|e| Other(format!("{e:#?}")))?;
+    let json = serde_json::to_string(&payload)?;
     let data = encrypt(key.as_str(), json.as_str())?;
 
     Ok(data)
@@ -128,13 +128,21 @@ pub fn generate_token_with_expiration(
     exp_seconds: i64,
 ) -> Result<String, Error> {
     if exp_seconds <= 1 {
-        return Err(Other(
-            "invalid expiration, must be greater than 1 second".to_string(),
-        ));
+        return Err(Error::InvalidExpirationSeconds(exp_seconds));
     }
+
+    let now_ts = Utc::now().timestamp();
+    let exp_ts = now_ts
+        .checked_add(exp_seconds)
+        .ok_or(Error::ExpirationOutOfRange(exp_seconds))?;
+
+    // timestamp_opt returns None if out of range
+    if Utc.timestamp_opt(exp_ts, 0).single().is_none() {
+        return Err(Error::ExpirationOutOfRange(exp_ts));
+    }
+
     generate(email, key, Duration::seconds(exp_seconds))
 }
-
 #[inline]
 /// Generates a token with the default expiration time.
 ///
@@ -190,20 +198,15 @@ pub fn generate_token(email: String, key: String) -> Result<String, Error> {
 pub fn validate_token(token: String, key: String) -> Result<String, Error> {
     let decrypted = decrypt(key.as_str(), token.as_str())?;
 
-    let payload: Payload =
-        serde_json::from_str(decrypted.as_str()).map_err(|e| Other(format!("{e:#?}")))?;
+    let payload: Payload = serde_json::from_str(decrypted.as_str())?;
 
-    let exp = match Utc.timestamp_opt(payload.expiration, 0).single() {
-        None => {
-            return Err(Other(
-                "out-of-range number of seconds in expiration".to_string(),
-            ));
-        }
-        Some(d) => d,
-    };
+    let exp_dt = Utc
+        .timestamp_opt(payload.expiration, 0)
+        .single()
+        .ok_or(Error::ExpirationOutOfRange(payload.expiration))?;
 
-    if Utc::now() > exp {
-        return Err(Expired(exp));
+    if Utc::now() > exp_dt {
+        return Err(Expired(exp_dt));
     }
 
     Ok(payload.email)
