@@ -16,7 +16,7 @@ steps:
 
   - name: auto-merge-dependabot
     depends_on: [build-and-test]
-    image: ghcr.io/cli/cli:latest
+    image: serversideup/github-cli:latest
     environment:
       GH_TOKEN:
         from_secret: GH_TOKEN
