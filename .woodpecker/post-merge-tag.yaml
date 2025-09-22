@@ -1,0 +1,21 @@
+when:
+  - event: tag
+    ref: refs/tags/v*
+
+  - name: publish-to-crates-io
+    image: rust:slim-trixie
+    environment:
+      CARGO_REGISTRY_TOKEN:
+        from_secret: CRATESIO_TOKEN
+    commands: # Require tag (vX.Y.Z) to match Cargo.toml version
+      - tag_version="${CI_COMMIT_TAG#v}"
+      - version_in_toml="$(awk '
+        /^\[package\]/{p=1; next}
+        /^\[/{p=0}
+        p && /^version *= *"/{gsub(/"/,""); sub(/^version *= */,""); print; exit}
+        ' Cargo.toml)"
+      - >-
+        echo "Tag: ${tag_version} | Cargo.toml: ${version_in_toml}"
+      - test "$version_in_toml" = "$tag_version"
+
+      - cargo publish --locked
