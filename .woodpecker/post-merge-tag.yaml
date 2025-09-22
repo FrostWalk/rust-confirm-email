@@ -2,6 +2,7 @@ when:
   - event: tag
     ref: refs/tags/v*
 
+steps:
   - name: publish-to-crates-io
     image: rust:slim-trixie
     environment:
