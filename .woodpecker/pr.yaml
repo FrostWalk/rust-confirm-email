@@ -8,6 +8,7 @@ steps:
       - rustc --version
       - cargo --version
       - rustup component add clippy
+      - rustup component add rustfmt
       - cargo clippy
       - cargo fmt --check
       - cargo build --locked --verbose
